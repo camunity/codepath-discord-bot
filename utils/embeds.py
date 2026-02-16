@@ -447,4 +447,65 @@ class EmbedBuilder:
         embed.set_footer(text="All times are in GMT/UTC | For GitLab help, use !gitlab help in a channel")
         
         return embed
+    
+    @staticmethod
+    def tracker_help_embed() -> discord.Embed:
+        """Create help embed for tracker commands.
+        
+        Returns:
+            Configured Discord embed
+        """
+        embed = discord.Embed(
+            title="📊 Tracker Bot - Help",
+            description="Process student tracker CSV into a comprehensive Excel report",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="📥 How to Use",
+            value=(
+                "**Step 1:** Upload a CSV file (no command needed)\n"
+                "**Step 2:** Run `!tracker download` to generate report"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔧 Commands",
+            value=(
+                "`!tracker download` - Generate tracker report\n"
+                "`!tracker help` - Show this help message"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📑 Report Tabs",
+            value=(
+                "**P1 - At Risk** 🔴\n"
+                "└─ Missing submissions, phase critical, stalled\n"
+                "**P2 - Flagged** 🟡\n"
+                "└─ Missing deliverables, no activity, compressed timeline\n"
+                "**P3 - On Track** 🟢\n"
+                "└─ Students progressing normally\n"
+                "**Weekly Summary** 📊\n"
+                "└─ Dashboard with statistics"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🎨 Color Coding",
+            value=(
+                "🔴 Red: Missing both submissions\n"
+                "🟠 Orange: Phase critical / Blocked\n"
+                "🟡 Yellow: Flagged / Compressed timeline\n"
+                "🟢 Green: On track"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Upload your tracker CSV to get started!")
+        
+        return embed
 

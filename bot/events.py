@@ -63,6 +63,8 @@ class EventsCog(commands.Cog, name="Events"):
             embed = EmbedBuilder.announcement_help_embed()
         elif ctx.prefix == '!gitlab ':
             embed = EmbedBuilder.gitlab_help_embed()
+        elif ctx.prefix == '!tracker ':
+            embed = EmbedBuilder.tracker_help_embed()
         else:
             # Fallback: DMs default to announce, channels default to gitlab
             if isinstance(ctx.channel, discord.DMChannel):
