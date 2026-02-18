@@ -457,14 +457,14 @@ class EmbedBuilder:
         """
         embed = discord.Embed(
             title="📊 Tracker Bot - Help",
-            description="Process student tracker CSV into a comprehensive Excel report",
+            description="Process student tracker CSVs into a comprehensive Excel report",
             color=discord.Color.green()
         )
         
         embed.add_field(
             name="📥 How to Use",
             value=(
-                "**Step 1:** Upload a CSV file (no command needed)\n"
+                "**Step 1:** Upload CSV files using `!tracker upload`\n"
                 "**Step 2:** Run `!tracker download` to generate report"
             ),
             inline=False
@@ -473,8 +473,26 @@ class EmbedBuilder:
         embed.add_field(
             name="🔧 Commands",
             value=(
+                "`!tracker upload` - Interactive wizard (all CSVs)\n"
+                "`!tracker upload master` - Upload master roster\n"
+                "`!tracker upload typeform` - Upload typeform responses\n"
+                "`!tracker upload zoom` - Upload zoom attendance\n"
                 "`!tracker download` - Generate tracker report\n"
+                "`!tracker files` - Check uploaded file status\n"
+                "`!tracker clear <type>` - Clear specific CSV\n"
+                "`!tracker clearall` - Clear all CSVs\n"
                 "`!tracker help` - Show this help message"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📁 CSV File Types",
+            value=(
+                "**Master** - Roster with Discord usernames\n"
+                "**Typeform** - Weekly progress submissions ✱\n"
+                "**Zoom** - Lecture & office hours attendance\n"
+                "✱ Required for report generation"
             ),
             inline=False
         )
@@ -505,7 +523,7 @@ class EmbedBuilder:
             inline=False
         )
         
-        embed.set_footer(text="Upload your tracker CSV to get started!")
+        embed.set_footer(text="Run !tracker upload to get started!")
         
         return embed
 

@@ -222,27 +222,73 @@ class CsvToExcelProcessor(FileProcessor):
 
 # ==================== File Storage Service (Single Responsibility) ====================
 
+# Valid file category names
+VALID_FILE_CATEGORIES = {"master", "typeform", "zoom"}
+
+
 class FileStorageService:
-    """Manages temporary file storage for processing.
+    """Manages persistent file storage for processing.
     
     Single Responsibility: Only handles file storage and retrieval.
-    Persists last file metadata to survive bot restarts.
+    Supports multiple named file categories (master, typeform, zoom).
+    Persists file metadata to survive bot restarts.
     """
     
     def __init__(self, storage_dir: str = "data/uploads"):
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-        self._metadata_file = self.storage_dir / "_last_file.json"
-        self._last_file: Optional[StoredFile] = self._load_last_file_metadata()
+        self._files: Dict[str, Optional[StoredFile]] = {}
+        self._load_all_metadata()
     
-    def _load_last_file_metadata(self) -> Optional[StoredFile]:
-        """Load last file metadata from disk."""
-        if not self._metadata_file.exists():
+    def _get_metadata_file(self, category: str) -> Path:
+        """Get metadata file path for a category."""
+        return self.storage_dir / f"_{category}_file.json"
+    
+    def _load_all_metadata(self) -> None:
+        """Load metadata for all file categories."""
+        for category in VALID_FILE_CATEGORIES:
+            self._files[category] = self._load_file_metadata(category)
+        
+        # Also load legacy "last_file" for backwards compatibility
+        legacy_file = self._load_legacy_metadata()
+        if legacy_file and not self._files.get("typeform"):
+            self._files["typeform"] = legacy_file
+    
+    def _load_legacy_metadata(self) -> Optional[StoredFile]:
+        """Load legacy _last_file.json for backwards compatibility."""
+        legacy_path = self.storage_dir / "_last_file.json"
+        if not legacy_path.exists():
             return None
         
         try:
             import json
-            with open(self._metadata_file, 'r') as f:
+            with open(legacy_path, 'r') as f:
+                data = json.load(f)
+            
+            filepath = Path(data['filepath'])
+            if not filepath.exists():
+                return None
+            
+            return StoredFile(
+                filename=data['filename'],
+                filepath=filepath,
+                uploaded_at=datetime.fromisoformat(data['uploaded_at']),
+                user_id=data['user_id'],
+                file_type=data['file_type']
+            )
+        except Exception as e:
+            print(f"[FileStorage] Failed to load legacy metadata: {e}")
+            return None
+    
+    def _load_file_metadata(self, category: str) -> Optional[StoredFile]:
+        """Load file metadata for a specific category from disk."""
+        metadata_file = self._get_metadata_file(category)
+        if not metadata_file.exists():
+            return None
+        
+        try:
+            import json
+            with open(metadata_file, 'r') as f:
                 data = json.load(f)
             
             filepath = Path(data['filepath'])
@@ -259,11 +305,11 @@ class FileStorageService:
                 file_type=data['file_type']
             )
         except Exception as e:
-            print(f"[FileStorage] Failed to load metadata: {e}")
+            print(f"[FileStorage] Failed to load {category} metadata: {e}")
             return None
     
-    def _save_last_file_metadata(self, stored: StoredFile) -> None:
-        """Save last file metadata to disk."""
+    def _save_file_metadata(self, category: str, stored: StoredFile) -> None:
+        """Save file metadata for a specific category to disk."""
         try:
             import json
             data = {
@@ -273,17 +319,26 @@ class FileStorageService:
                 'user_id': stored.user_id,
                 'file_type': stored.file_type
             }
-            with open(self._metadata_file, 'w') as f:
+            with open(self._get_metadata_file(category), 'w') as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
-            print(f"[FileStorage] Failed to save metadata: {e}")
+            print(f"[FileStorage] Failed to save {category} metadata: {e}")
     
-    def store_file(self, filename: str, data: bytes, user_id: int) -> StoredFile:
-        """Store a file and return its metadata."""
-        # Generate unique filename with timestamp
+    def store_file(self, filename: str, data: bytes, user_id: int, 
+                   category: Optional[str] = None) -> StoredFile:
+        """Store a file and return its metadata.
+        
+        Args:
+            filename: Original filename
+            data: File data bytes
+            user_id: Discord user ID who uploaded
+            category: File category (master, typeform, zoom). If None, stores as generic.
+        """
+        # Generate unique filename with timestamp and category prefix
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_filename = "".join(c for c in filename if c.isalnum() or c in "._-")
-        stored_name = f"{timestamp}_{safe_filename}"
+        category_prefix = f"{category}_" if category else ""
+        stored_name = f"{category_prefix}{timestamp}_{safe_filename}"
         
         filepath = self.storage_dir / stored_name
         filepath.write_bytes(data)
@@ -298,20 +353,91 @@ class FileStorageService:
             file_type=file_type
         )
         
-        self._last_file = stored
-        self._save_last_file_metadata(stored)  # Persist to disk
+        if category and category in VALID_FILE_CATEGORIES:
+            self._files[category] = stored
+            self._save_file_metadata(category, stored)
+        
+        return stored
+    
+    def get_file(self, category: str) -> Optional[StoredFile]:
+        """Get stored file for a specific category."""
+        if category not in VALID_FILE_CATEGORIES:
+            return None
+        
+        stored = self._files.get(category)
+        # Verify the file still exists
+        if stored and not stored.filepath.exists():
+            self._files[category] = None
+            return None
         return stored
     
     def get_last_file(self) -> Optional[StoredFile]:
-        """Get the most recently stored file."""
-        # Verify the file still exists
-        if self._last_file and not self._last_file.filepath.exists():
-            self._last_file = None
-        return self._last_file
+        """Get the most recently stored typeform file (backwards compatibility)."""
+        return self.get_file("typeform")
+    
+    def get_all_files(self) -> Dict[str, Optional[StoredFile]]:
+        """Get all stored files by category."""
+        return {
+            category: self.get_file(category) 
+            for category in VALID_FILE_CATEGORIES
+        }
     
     def read_file(self, stored_file: StoredFile) -> bytes:
         """Read and return file contents."""
         return stored_file.filepath.read_bytes()
+    
+    def read_file_by_category(self, category: str) -> Optional[bytes]:
+        """Read and return file contents for a specific category."""
+        stored = self.get_file(category)
+        if stored:
+            return self.read_file(stored)
+        return None
+    
+    def has_file(self, category: str) -> bool:
+        """Check if a file exists for the given category."""
+        return self.get_file(category) is not None
+    
+    def delete_file(self, category: str) -> bool:
+        """Delete a stored file and its metadata for a specific category.
+        
+        Returns True if file was deleted, False if no file existed.
+        """
+        if category not in VALID_FILE_CATEGORIES:
+            return False
+        
+        stored = self._files.get(category)
+        if not stored:
+            return False
+        
+        # Delete the actual file
+        try:
+            if stored.filepath.exists():
+                stored.filepath.unlink()
+        except Exception as e:
+            print(f"[FileStorage] Error deleting {category} file: {e}")
+        
+        # Delete metadata file
+        try:
+            metadata_file = self._get_metadata_file(category)
+            if metadata_file.exists():
+                metadata_file.unlink()
+        except Exception as e:
+            print(f"[FileStorage] Error deleting {category} metadata: {e}")
+        
+        # Clear from memory
+        self._files[category] = None
+        return True
+    
+    def delete_all_files(self) -> int:
+        """Delete all stored files and their metadata.
+        
+        Returns count of files deleted.
+        """
+        deleted = 0
+        for category in VALID_FILE_CATEGORIES:
+            if self.delete_file(category):
+                deleted += 1
+        return deleted
     
     def cleanup_old_files(self, max_age_hours: int = 24) -> int:
         """Remove files older than max_age_hours. Returns count of deleted files."""
@@ -319,8 +445,8 @@ class FileStorageService:
         cutoff = datetime.now().timestamp() - (max_age_hours * 3600)
         
         for filepath in self.storage_dir.iterdir():
-            # Skip metadata file
-            if filepath.name == "_last_file.json":
+            # Skip metadata files
+            if filepath.name.startswith("_") and filepath.name.endswith(".json"):
                 continue
             if filepath.is_file() and filepath.stat().st_mtime < cutoff:
                 filepath.unlink()
